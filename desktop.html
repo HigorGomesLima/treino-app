@@ -33,6 +33,13 @@ details.log .body { padding:0 14px 12px; }
 .login { max-width:340px; margin:12vh auto; } .login label { display:block; margin:10px 0; } .login input { width:100%; }
 .err { color:var(--err); min-height:20px; }
 svg text { fill:var(--mut); font-size:11px; }
+button.sm { padding:5px 10px; font-size:13px; } button.dng { color:var(--err); border-color:var(--err); }
+button.lnk { background:none; border:0; color:var(--ac2); cursor:pointer; font:inherit; font-size:13px; padding:2px 6px; }
+.modal { position:fixed; inset:0; background:rgba(0,0,0,.65); display:flex; align-items:flex-start; justify-content:center; overflow:auto; padding:30px 16px; z-index:20; }
+.modal .box { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; width:100%; max-width:560px; }
+.modal label { display:block; margin:8px 0; } .modal label input, .modal label textarea { width:100%; display:block; margin-top:4px; }
+.modal textarea { background:#0f1115; color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:9px 10px; font:inherit; }
+.modal .row input { width:90px; }
 .two { display:grid; grid-template-columns:1fr 1fr; gap:16px; } @media (max-width:800px){ .two { grid-template-columns:1fr; } }
 </style>
 </head>
@@ -147,7 +154,8 @@ function tTreinos() {
   var ls = D.logs.filter(function (l) { return !filtroFicha || l.ficha === filtroFicha; });
   if (!ls.length) return h + '<p class="muted">Nenhum treino registrado ainda.</p>';
   ls.forEach(function (l) {
-    h += '<details class="log"><summary><span><b>' + fmtData(l.data) + '</b> · ' + esc(l.ficha) + '</span><span class="muted small">' + l.exercicios.length + ' exercícios · ' + nSeries(l) + ' séries · ' + Math.round(volume(l)) + ' kg de volume</span></summary><div class="body">' + corpoLog(l) + '</div></details>';
+    h += '<details class="log"><summary><span><b>' + fmtData(l.data) + '</b> · ' + esc(l.ficha) + '</span><span class="muted small">' + l.exercicios.length + ' exercícios · ' + nSeries(l) + ' séries · ' + Math.round(volume(l)) + ' kg de volume</span></summary><div class="body">' + corpoLog(l) +
+      '<div class="row" style="margin-top:10px"><button class="btn out sm" data-ed="log:' + esc(l.id) + '">Editar</button><button class="btn out sm dng" data-del="logs:' + esc(l.id) + '">Excluir</button></div></div></details>';
   });
   return h;
 }
@@ -168,8 +176,9 @@ function tCorpo() {
   var c = function (k, un) { return D.corpo.map(function (m) { return { x: dia(m.data), y: num(m[k]), t: fmtData(m.data) }; }); };
   var h = '<div class="two"><div class="card"><h2>Peso (kg)</h2>' + linha(c('peso'), 'kg') + '</div><div class="card"><h2>Cintura (cm)</h2>' + linha(c('cintura'), 'cm') + '</div>' +
     '<div class="card"><h2>Braço (cm)</h2>' + linha(c('braco'), 'cm') + '</div><div class="card"><h2>Coxa (cm)</h2>' + linha(c('coxa'), 'cm') + '</div></div>';
-  h += '<div class="card"><table><tr><th>Data</th><th class="n">Peso</th><th class="n">Cintura</th><th class="n">Braço</th><th class="n">Coxa</th></tr>' +
-    D.corpo.slice().reverse().map(function (m) { return '<tr><td>' + fmtData(m.data) + '</td><td class="n">' + esc(m.peso || '–') + '</td><td class="n">' + esc(m.cintura || '–') + '</td><td class="n">' + esc(m.braco || '–') + '</td><td class="n">' + esc(m.coxa || '–') + '</td></tr>'; }).join('') + '</table></div>';
+  h += '<div class="card"><table><tr><th>Data</th><th class="n">Peso</th><th class="n">Cintura</th><th class="n">Braço</th><th class="n">Coxa</th><th></th></tr>' +
+    D.corpo.slice().reverse().map(function (m) { return '<tr><td>' + fmtData(m.data) + '</td><td class="n">' + esc(m.peso || '–') + '</td><td class="n">' + esc(m.cintura || '–') + '</td><td class="n">' + esc(m.braco || '–') + '</td><td class="n">' + esc(m.coxa || '–') + '</td>' +
+      '<td class="n"><button class="lnk" data-ed="corpo:' + esc(m.id) + '">Editar</button><button class="lnk" style="color:var(--err)" data-del="corpo:' + esc(m.id) + '">Excluir</button></td></tr>'; }).join('') + '</table></div>';
   return h;
 }
 function tFichas() {
@@ -206,6 +215,85 @@ function desenhar() {
   if ($('#ff')) $('#ff').onchange = function () { filtroFicha = this.value; desenhar(); };
   if ($('#fe')) $('#fe').onchange = function () { exSel = this.value; desenhar(); };
   if ($('#csv')) $('#csv').onclick = csv;
+  document.querySelectorAll('[data-ed]').forEach(function (b) { b.onclick = function () { var p = b.dataset.ed.split(':'); abrirEd(p[0], p.slice(1).join(':')); }; });
+  document.querySelectorAll('[data-del]').forEach(function (b) { b.onclick = function () { var p = b.dataset.del.split(':'); excluir(p[0], p.slice(1).join(':')); }; });
+}
+
+/* ---------- editar e excluir ---------- */
+var ed = null;
+function pasta() { var u = firebase.auth().currentUser; return firebase.firestore().collection('usuarios').doc(u.uid); }
+async function excluir(col, id) {
+  col = col === 'log' ? 'logs' : col;
+  if (!confirm('Excluir este registro? Isso apaga na nuvem e não pode ser desfeito.')) return;
+  try {
+    var b = firebase.firestore().batch();
+    b.delete(pasta().collection(col).doc(id));
+    b.set(pasta().collection('excluidos').doc(col + '_' + id), { col: col, id: id, em: new Date().toISOString() });
+    await b.commit();
+    D[col === 'logs' ? 'logs' : 'corpo'] = D[col === 'logs' ? 'logs' : 'corpo'].filter(function (x) { return x.id !== id; });
+    desenhar();
+  } catch (e) { alert('Não foi possível excluir: ' + (e.code || e.message)); }
+}
+function abrirEd(tipo, id) {
+  var lista = tipo === 'log' ? D.logs : D.corpo, src = lista.find(function (x) { return x.id === id; });
+  if (!src) return;
+  ed = { tipo: tipo, obj: JSON.parse(JSON.stringify(src)) };
+  modal();
+}
+function fechaEd() { ed = null; var m = $('.modal'); if (m) m.remove(); }
+function modal() {
+  var o = ed.obj, h;
+  if (ed.tipo === 'log') {
+    h = '<h2>Editar treino</h2><div class="row"><label>Data<input type="date" data-f="data" value="' + esc(String(o.data).slice(0, 10)) + '"></label><label>Ficha<input data-f="ficha" value="' + esc(o.ficha) + '"></label></div>';
+    o.exercicios.forEach(function (e, i) {
+      h += '<h3>' + esc(e.nome) + ' <button class="lnk" data-a="rmex" data-i="' + i + '">remover exercício</button></h3>';
+      e.series.forEach(function (s, j) {
+        h += '<div class="row" style="margin-bottom:6px"><span class="muted small">Série ' + (j + 1) + '</span><input data-i="' + i + '" data-j="' + j + '" data-f="carga" inputmode="decimal" value="' + esc(s.carga) + '"> kg × <input data-i="' + i + '" data-j="' + j + '" data-f="reps" value="' + esc(s.reps) + '"><button class="lnk" data-a="rmse" data-i="' + i + '" data-j="' + j + '">✕</button></div>';
+      });
+      h += '<button class="lnk" data-a="addse" data-i="' + i + '">+ série</button>';
+    });
+    h += '<label>Observações<textarea rows="2" data-f="obs">' + esc(o.obs || '') + '</textarea></label>';
+  } else {
+    h = '<h2>Editar medidas</h2><label>Data<input type="date" data-f="data" value="' + esc(String(o.data).slice(0, 10)) + '"></label>' +
+      [['peso', 'Peso (kg)'], ['cintura', 'Cintura (cm)'], ['braco', 'Braço (cm)'], ['coxa', 'Coxa (cm)']].map(function (c) { return '<label>' + c[1] + '<input data-f="' + c[0] + '" inputmode="decimal" value="' + esc(o[c[0]] || '') + '"></label>'; }).join('');
+  }
+  h += '<div class="row" style="margin-top:14px"><button class="btn" data-a="salvar">Salvar</button><button class="btn out" data-a="cancelar">Cancelar</button></div>';
+  var m = $('.modal'); if (m) m.remove();
+  m = document.createElement('div'); m.className = 'modal'; m.innerHTML = '<div class="box">' + h + '</div>';
+  document.body.appendChild(m);
+  m.oninput = function (ev) {
+    var t = ev.target, f = t.dataset.f; if (!f) return;
+    if (t.dataset.i !== undefined) ed.obj.exercicios[+t.dataset.i].series[+t.dataset.j][f] = t.value; else ed.obj[f] = t.value;
+  };
+  m.onclick = function (ev) {
+    var a = ev.target.dataset && ev.target.dataset.a; if (!a) return;
+    var i = +ev.target.dataset.i, j = +ev.target.dataset.j;
+    if (a === 'cancelar') fechaEd();
+    else if (a === 'salvar') salvarEd();
+    else {
+      if (a === 'rmex') ed.obj.exercicios.splice(i, 1);
+      else if (a === 'rmse') ed.obj.exercicios[i].series.splice(j, 1);
+      else if (a === 'addse') ed.obj.exercicios[i].series.push({ carga: '', reps: '' });
+      modal();
+    }
+  };
+}
+async function salvarEd() {
+  var o = ed.obj, col = ed.tipo === 'log' ? 'logs' : 'corpo';
+  if (!o.data) { alert('Informe a data'); return; }
+  if (ed.tipo === 'log') {
+    o.exercicios = o.exercicios.map(function (e) { e.series = e.series.filter(function (s) { return String(s.carga).trim() || String(s.reps).trim(); }); return e; }).filter(function (e) { return e.series.length; });
+    if (!o.exercicios.length) { alert('O treino precisa de ao menos uma série. Para apagar tudo, use Excluir.'); return; }
+  }
+  o.editado = new Date().toISOString();
+  try {
+    await pasta().collection(col).doc(o.id).set(o);
+    var lista = ed.tipo === 'log' ? D.logs : D.corpo, k = lista.findIndex(function (x) { return x.id === o.id; });
+    if (k >= 0) lista[k] = o;
+    if (ed.tipo === 'log') D.logs.sort(function (a, b) { return String(b.data + (b.fim || '')).localeCompare(String(a.data + (a.fim || ''))); });
+    else D.corpo.sort(function (a, b) { return String(a.data).localeCompare(String(b.data)); });
+    fechaEd(); desenhar();
+  } catch (e) { alert('Não foi possível salvar: ' + (e.code || e.message)); }
 }
 boot();
 })();

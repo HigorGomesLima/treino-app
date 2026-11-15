@@ -464,8 +464,16 @@ async function puxar(substituir) {
       S = normalizar(S);
       try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {}
     }
+    /* itens excluídos pelo painel desktop não podem voltar */
+    var xs = await docs('excluidos').get(), morto = {}, achou = false;
+    xs.forEach(function (d) { var x = d.data(); morto[x.col + '/' + x.id] = 1; });
+    var vivo = function (col) { return function (x) { return !morto[col + '/' + x.id]; }; };
+    if (S.logs.some(function (x) { return morto['logs/' + x.id]; }) || S.corpo.some(function (x) { return morto['corpo/' + x.id]; })) achou = true;
+    S.logs = S.logs.filter(vivo('logs')); S.corpo = S.corpo.filter(vivo('corpo'));
+    rl = rl.filter(vivo('logs')); rc = rc.filter(vivo('corpo'));
+    if (achou) { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
     nuvem.hashes = {};
-    rl.forEach(function (x) { nuvem.hashes['logs/' + x.id] = JSON.stringify(x); });
+    rl.forEach(function (x) { nuvem.hashes['logs/' + x.id]= JSON.stringify(x); });
     rc.forEach(function (x) { nuvem.hashes['corpo/' + x.id] = JSON.stringify(x); });
     nuvem.hashes['dados/perfil'] = pf.exists ? '?' : '';
     await empurrar();
