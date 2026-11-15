@@ -524,11 +524,9 @@ function vConta() {
       '<div class="row gap"><button class="btn sm" data-act="au-sync">Sincronizar agora</button><button class="btn outline sm" data-act="au-sair">Sair</button></div>';
   } else {
     h += '<p class="muted small">Entre para guardar seus dados na nuvem e não perdê-los se trocar de aparelho.</p>' +
-      '<label>E-mail<input id="au-email" type="email" autocomplete="username" inputmode="email"></label>' +
+      '<label>E-mail<input id="au-email" type="email" autocomplete="username" inputmode="email" value="higor@treino.com"></label>' +
       '<label>Senha<input id="au-senha" type="password" autocomplete="current-password"></label>' +
-      '<div class="row gap"><button class="btn sm" data-act="au-entrar">Entrar</button>' +
-      '<button class="btn outline sm" data-act="au-criar">Criar conta</button>' +
-      '<button class="ghost sm" data-act="au-reset">Esqueci a senha</button></div>';
+      '<div class="row gap"><button class="btn sm" data-act="au-entrar">Entrar</button></div>';
   }
   return h + '</div>';
 }
@@ -743,8 +741,6 @@ document.addEventListener('click', async function (ev) {
     case 'enviar-pend': enviarPendentes(); break;
     case 'copy-script': copiar(SCRIPT_SHEETS); break;
     case 'au-entrar': acaoAuth('entrar'); break;
-    case 'au-criar': acaoAuth('criar'); break;
-    case 'au-reset': acaoAuth('reset'); break;
     case 'au-sair': sair(); break;
     case 'au-sync': nuvem.status = 'sincronizando…'; render(); puxar(false).then(function () { render(); }); break;
     case 'export': exportar(); break;
