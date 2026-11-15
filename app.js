@@ -75,7 +75,6 @@ function normalizar(o) {
   if (!o.config || typeof o.config !== 'object') o.config = {};
   o.config.webhook = o.config.webhook || '';
   o.config.headers = o.config.headers || '';
-  o.config.clientId = o.config.clientId || '';
   if (!o.config.user || typeof o.config.user !== 'object') o.config.user = null;
   if (!o.dietas.find(function (d) { return d.id === o.config.dietaId; })) o.config.dietaId = o.dietas[0] ? o.dietas[0].id : null;
   o.rascunho = o.rascunho || null;
@@ -91,6 +90,7 @@ function load() {
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(S)); }
   catch (e) { toast('Não foi possível salvar neste navegador'); }
+  if (typeof agendarSync === 'function') agendarSync();
 }
 
 var tab = 'treino';
@@ -211,7 +211,6 @@ function render() {
   var y = window.scrollY;
   $('#app').innerHTML = h;
   window.scrollTo(0, y);
-  if (tab === 'ajustes') montarGoogle();
 }
 
 /* ---- treino: lista de fichas ---- */
@@ -363,49 +362,175 @@ var SCRIPT_SHEETS =
 "  }\n" +
 "  return ContentService.createTextOutput('ok');\n" +
 "}";
-/* ---- conta Google ---- */
-function jwtPayload(t) {
-  var b = t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-  return JSON.parse(decodeURIComponent(escape(atob(b))));
+/* ---- conta e nuvem (Firebase) ---- */
+var FB_CONFIG = {
+  apiKey: 'AIzaSyCrCNF3Weq-3I8nJWiaovlrLZq3VUoQa-I',
+  authDomain: 'treino-app-92e27.firebaseapp.com',
+  projectId: 'treino-app-92e27',
+  storageBucket: 'treino-app-92e27.firebasestorage.app',
+  messagingSenderId: '456944321673',
+  appId: '1:456944321673:web:863e960b6d213cb5f03258'
+};
+var FB_VER = '10.12.2';
+var nuvem = { auth: null, db: null, pronto: false, carregando: null, status: '', hashes: {}, timer: null, ocupado: false, pendente: false };
+
+function carregarFirebase() {
+  if (nuvem.carregando) return nuvem.carregando;
+  function js(src) {
+    return new Promise(function (ok, erro) {
+      var s = document.createElement('script');
+      s.src = src; s.onload = ok; s.onerror = function () { erro(new Error('offline')); };
+      document.head.appendChild(s);
+    });
+  }
+  var base = 'https://www.gstatic.com/firebasejs/' + FB_VER + '/firebase-';
+  nuvem.carregando = js(base + 'app-compat.js')
+    .then(function () { return Promise.all([js(base + 'auth-compat.js'), js(base + 'firestore-compat.js')]); })
+    .then(function () {
+      firebase.initializeApp(FB_CONFIG);
+      nuvem.auth = firebase.auth();
+      nuvem.db = firebase.firestore();
+      nuvem.pronto = true;
+      nuvem.auth.onAuthStateChanged(function (u) {
+        if (u) {
+          var outro = S.config.user && S.config.user.uid && S.config.user.uid !== u.uid;
+          S.config.user = { uid: u.uid, email: u.email };
+          save();
+          puxar(outro).then(function () { if (tab === 'ajustes') render(); });
+        } else if (S.config.user) {
+          S.config.user = null; save(); if (tab === 'ajustes') render();
+        }
+      });
+    })
+    .catch(function (e) { nuvem.carregando = null; throw e; });
+  return nuvem.carregando;
 }
+
+function msgAuth(e) {
+  var m = {
+    'auth/invalid-credential': 'E-mail ou senha incorretos',
+    'auth/wrong-password': 'E-mail ou senha incorretos',
+    'auth/user-not-found': 'E-mail ou senha incorretos',
+    'auth/email-already-in-use': 'Este e-mail já tem conta. Use Entrar',
+    'auth/weak-password': 'A senha precisa ter pelo menos 6 caracteres',
+    'auth/invalid-email': 'E-mail inválido',
+    'auth/missing-password': 'Digite a senha',
+    'auth/too-many-requests': 'Muitas tentativas. Aguarde um pouco',
+    'auth/network-request-failed': 'Sem conexão',
+    'auth/operation-not-allowed': 'Login por e-mail não está ativado no Firebase'
+  };
+  return (e && m[e.code]) || (e && e.message === 'offline' ? 'Sem conexão' : 'Não foi possível concluir');
+}
+function acaoAuth(tipo) {
+  var email = (($('#au-email') || {}).value || '').trim(), senha = ($('#au-senha') || {}).value || '';
+  if (!email) { toast('Digite o e-mail'); return; }
+  if (tipo !== 'reset' && !senha) { toast('Digite a senha'); return; }
+  carregarFirebase().then(function () {
+    if (tipo === 'entrar') return nuvem.auth.signInWithEmailAndPassword(email, senha).then(function () { toast('Login feito ✓'); });
+    if (tipo === 'criar') return nuvem.auth.createUserWithEmailAndPassword(email, senha).then(function () { toast('Conta criada ✓'); });
+    return nuvem.auth.sendPasswordResetEmail(email).then(function () { toast('E-mail de redefinição enviado'); });
+  }).catch(function (e) { toast(msgAuth(e)); });
+}
+function sair() {
+  if (nuvem.auth) nuvem.auth.signOut();
+  S.config.user = null; save(); render();
+}
+
+function limpo(o) { return JSON.parse(JSON.stringify(o)); }
+function docs(col) { return nuvem.db.collection('usuarios').doc(nuvem.auth.currentUser.uid).collection(col); }
+
+async function puxar(substituir) {
+  if (!nuvem.auth || !nuvem.auth.currentUser) return;
+  nuvem.status = 'sincronizando…';
+  try {
+    var pf = await docs('dados').doc('perfil').get();
+    var ls = await docs('logs').get(), cs = await docs('corpo').get();
+    var rl = [], rc = [];
+    ls.forEach(function (d) { rl.push(d.data()); });
+    cs.forEach(function (d) { rc.push(d.data()); });
+    if (pf.exists) {
+      var p = pf.data();
+      ['treinos', 'dietas'].forEach(function (k) { if (Array.isArray(p[k]) && p[k].length) S[k] = p[k]; });
+      if (typeof p.tecnicas === 'string') S.tecnicas = p.tecnicas;
+      if (p.dietaChecks && typeof p.dietaChecks === 'object') S.dietaChecks = p.dietaChecks;
+      var mescla = function (loc, rem) {
+        if (substituir) return rem;
+        var ids = {}; rem.forEach(function (x) { ids[x.id] = 1; });
+        return rem.concat(loc.filter(function (x) { return !ids[x.id]; }));
+      };
+      S.logs = mescla(S.logs, rl);
+      S.corpo = mescla(S.corpo, rc);
+      S.logs.sort(function (a, b) { return String(b.data).localeCompare(String(a.data)); });
+      S = normalizar(S);
+      try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {}
+    }
+    nuvem.hashes = {};
+    rl.forEach(function (x) { nuvem.hashes['logs/' + x.id] = JSON.stringify(x); });
+    rc.forEach(function (x) { nuvem.hashes['corpo/' + x.id] = JSON.stringify(x); });
+    nuvem.hashes['dados/perfil'] = pf.exists ? '?' : '';
+    await empurrar();
+  } catch (e) { nuvem.status = 'falhou: ' + (e.code || e.message); }
+}
+
+function agendarSync() {
+  if (!S.config.user) return;
+  clearTimeout(nuvem.timer);
+  nuvem.timer = setTimeout(function () {
+    if (!nuvem.pronto) { carregarFirebase().catch(function () {}); return; }
+    empurrar();
+  }, 1500);
+}
+
+async function empurrar() {
+  if (!nuvem.pronto || !nuvem.auth.currentUser) return;
+  if (nuvem.ocupado) { nuvem.pendente = true; return; }
+  nuvem.ocupado = true;
+  try {
+    var ops = [];
+    var perfil = limpo({ treinos: S.treinos, dietas: S.dietas, tecnicas: S.tecnicas, dietaChecks: S.dietaChecks });
+    var ph = JSON.stringify(perfil);
+    if (nuvem.hashes['dados/perfil'] !== ph) ops.push({ ref: docs('dados').doc('perfil'), data: perfil, h: ph, k: 'dados/perfil' });
+    [['logs', S.logs], ['corpo', S.corpo]].forEach(function (par) {
+      var atuais = {};
+      par[1].forEach(function (x) {
+        var o = limpo(x); delete o.enviado;
+        var k = par[0] + '/' + o.id, h = JSON.stringify(o);
+        atuais[k] = 1;
+        if (nuvem.hashes[k] !== h) ops.push({ ref: docs(par[0]).doc(String(o.id)), data: o, h: h, k: k });
+      });
+      Object.keys(nuvem.hashes).forEach(function (k) {
+        if (k.indexOf(par[0] + '/') === 0 && !atuais[k]) ops.push({ ref: docs(par[0]).doc(k.slice(par[0].length + 1)), del: true, k: k });
+      });
+    });
+    for (var i = 0; i < ops.length; i += 400) {
+      var lote = ops.slice(i, i + 400), b = nuvem.db.batch();
+      lote.forEach(function (o) { if (o.del) b.delete(o.ref); else b.set(o.ref, o.data); });
+      await b.commit();
+      lote.forEach(function (o) { if (o.del) delete nuvem.hashes[o.k]; else nuvem.hashes[o.k] = o.h; });
+    }
+    nuvem.status = 'sincronizado ✓ ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  } catch (e) { nuvem.status = 'falhou: ' + (e.code || e.message); }
+  nuvem.ocupado = false;
+  if (nuvem.pendente) { nuvem.pendente = false; empurrar(); }
+  else if (tab === 'ajustes') { var el = $('#nv-status'); if (el) el.textContent = nuvem.status; }
+}
+
 function vConta() {
   var u = S.config.user;
-  var h = '<div class="card"><h2>Conta</h2>';
+  var h = '<div class="card"><h2>Conta e nuvem</h2>';
   if (u) {
-    h += '<div class="row gap" style="align-items:center">' + (u.foto ? '<img src="' + esc(u.foto) + '" alt="" width="40" height="40" style="border-radius:50%" referrerpolicy="no-referrer">' : '') +
-      '<div><b>' + esc(u.nome) + '</b><br><span class="muted small">' + esc(u.email) + '</span></div></div>' +
-      '<p class="muted small">Seu e-mail é enviado junto com os dados na URL de envio.</p>' +
-      '<button class="btn outline sm" data-act="google-sair">Sair</button>';
+    h += '<p><b>' + esc(u.email) + '</b></p>' +
+      '<p class="muted small">Seus treinos, fichas, dieta e medidas são salvos na nuvem e sincronizam entre aparelhos. <span id="nv-status">' + esc(nuvem.status) + '</span></p>' +
+      '<div class="row gap"><button class="btn sm" data-act="au-sync">Sincronizar agora</button><button class="btn outline sm" data-act="au-sair">Sair</button></div>';
   } else {
-    h += '<p class="muted small">Entre com sua conta Google para identificar os envios.</p>';
-    if (S.config.clientId) h += '<div id="g-btn" style="min-height:44px"></div><p class="muted small" id="g-msg"></p>';
-    h += '<details' + (S.config.clientId ? '' : ' open') + '><summary>Client ID do Google</summary>' +
-      '<p class="muted small">Crie em console.cloud.google.com → APIs e serviços → Credenciais → ID do cliente OAuth (Aplicativo da Web) e adicione o endereço onde o app está hospedado em “Origens JavaScript autorizadas”.</p>' +
-      '<label>Client ID<input id="cfg-cid" placeholder="123-abc.apps.googleusercontent.com" value="' + esc(S.config.clientId) + '"></label></details>';
+    h += '<p class="muted small">Entre para guardar seus dados na nuvem e não perdê-los se trocar de aparelho.</p>' +
+      '<label>E-mail<input id="au-email" type="email" autocomplete="username" inputmode="email"></label>' +
+      '<label>Senha<input id="au-senha" type="password" autocomplete="current-password"></label>' +
+      '<div class="row gap"><button class="btn sm" data-act="au-entrar">Entrar</button>' +
+      '<button class="btn outline sm" data-act="au-criar">Criar conta</button>' +
+      '<button class="ghost sm" data-act="au-reset">Esqueci a senha</button></div>';
   }
   return h + '</div>';
-}
-function montarGoogle() {
-  var box = $('#g-btn');
-  if (!box || S.config.user) return;
-  function ini() {
-    try {
-      google.accounts.id.initialize({ client_id: S.config.clientId, callback: function (r) {
-        try {
-          var p = jwtPayload(r.credential);
-          S.config.user = { nome: p.name || p.email, email: p.email, foto: p.picture || '' };
-          save(); render(); toast('Login feito ✓');
-        } catch (e) { toast('Falha no login'); }
-      } });
-      google.accounts.id.renderButton(box, { theme: 'outline', size: 'large', text: 'signin_with', locale: 'pt-BR' });
-    } catch (e) { var m = $('#g-msg'); if (m) m.textContent = 'Não foi possível iniciar o login.'; }
-  }
-  if (window.google && window.google.accounts) { ini(); return; }
-  var sc = document.createElement('script');
-  sc.src = 'https://accounts.google.com/gsi/client'; sc.async = true;
-  sc.onload = ini;
-  sc.onerror = function () { var m = $('#g-msg'); if (m) m.textContent = 'Sem conexão para carregar o login do Google.'; };
-  document.head.appendChild(sc);
 }
 
 function vAjustes() {
@@ -617,7 +742,11 @@ document.addEventListener('click', async function (ev) {
       toast(t.ok ? (t.semConfirmacao ? 'Teste disparado (o servidor não confirma neste modo)' : 'Teste enviado ✓') : (t.motivo === 'sem-url' ? 'Informe a URL primeiro' : 'Falhou: ' + t.motivo)); break;
     case 'enviar-pend': enviarPendentes(); break;
     case 'copy-script': copiar(SCRIPT_SHEETS); break;
-    case 'google-sair': S.config.user = null; save(); render(); try { google.accounts.id.disableAutoSelect(); } catch (e) {} break;
+    case 'au-entrar': acaoAuth('entrar'); break;
+    case 'au-criar': acaoAuth('criar'); break;
+    case 'au-reset': acaoAuth('reset'); break;
+    case 'au-sair': sair(); break;
+    case 'au-sync': nuvem.status = 'sincronizando…'; render(); puxar(false).then(function () { render(); }); break;
     case 'export': exportar(); break;
     case 'copy-backup': copiar(JSON.stringify(S, null, 2)); break;
     case 'import': abrirImport(); break;
@@ -651,8 +780,7 @@ document.addEventListener('input', function (ev) {
 
 document.addEventListener('change', function (ev) {
   var t = ev.target;
-  if (t.id === 'cfg-cid') { S.config.clientId = t.value.trim(); save(); render(); }
-  else if (t.id === 'cfg-url') { S.config.webhook = t.value.trim(); save(); }
+  if (t.id === 'cfg-url') { S.config.webhook = t.value.trim(); save(); }
   else if (t.id === 'cfg-headers') { S.config.headers = t.value.trim(); save(); }
   else if (t.id === 'cfg-tec') { S.tecnicas = t.value; save(); }
   else if (t.id === 'imp-file' && t.files && t.files[0]) {
@@ -665,6 +793,7 @@ document.addEventListener('change', function (ev) {
 /* ================= início ================= */
 load();
 render();
+if (S.config.user && navigator.onLine) carregarFirebase().catch(function () {});
 if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
   window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
 }
