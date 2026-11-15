@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meu Treino · Painel</title>
+<style>
+:root { --bg:#0f1115; --card:#171a21; --line:#262b36; --txt:#e8eaf0; --mut:#8b93a5; --ac:#4ade80; --ac2:#60a5fa; --err:#f87171; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--txt); font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+h1 { font-size:22px; margin:0; } h2 { font-size:16px; margin:0 0 10px; } h3 { font-size:14px; margin:14px 0 6px; }
+.muted { color:var(--mut); } .small { font-size:13px; }
+header.top { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 24px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:5; }
+nav.tabs { display:flex; gap:6px; padding:12px 24px 0; border-bottom:1px solid var(--line); }
+nav.tabs button { background:none; border:0; color:var(--mut); padding:10px 14px; font:inherit; cursor:pointer; border-bottom:2px solid transparent; }
+nav.tabs button.on { color:var(--ac); border-color:var(--ac); }
+main { max-width:1200px; margin:0 auto; padding:20px 24px 60px; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px; }
+.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:16px; }
+.stat { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; }
+.stat b { display:block; font-size:24px; }
+button.btn, a.btn { background:var(--ac); color:#06210f; border:0; border-radius:8px; padding:9px 14px; font:inherit; font-weight:600; cursor:pointer; text-decoration:none; display:inline-block; }
+button.out { background:none; color:var(--ac); border:1px solid var(--ac); }
+input, select { background:#0f1115; color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:9px 10px; font:inherit; }
+table { width:100%; border-collapse:collapse; } th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); } th { color:var(--mut); font-weight:500; font-size:13px; }
+td.n, th.n { text-align:right; font-variant-numeric:tabular-nums; }
+.row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+details.log { border:1px solid var(--line); border-radius:10px; margin-bottom:8px; background:var(--card); }
+details.log > summary { padding:12px 14px; cursor:pointer; display:flex; justify-content:space-between; gap:12px; }
+details.log .body { padding:0 14px 12px; }
+.chips { display:flex; flex-wrap:wrap; gap:6px; }
+.chip { background:#0f1115; border:1px solid var(--line); border-radius:6px; padding:2px 8px; font-size:13px; }
+.login { max-width:340px; margin:12vh auto; } .login label { display:block; margin:10px 0; } .login input { width:100%; }
+.err { color:var(--err); min-height:20px; }
+svg text { fill:var(--mut); font-size:11px; }
+.two { display:grid; grid-template-columns:1fr 1fr; gap:16px; } @media (max-width:800px){ .two { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+(function () {
+'use strict';
+var CFG = { apiKey: 'AIzaSyCrCNF3Weq-3I8nJWiaovlrLZq3VUoQa-I', authDomain: 'treino-app-92e27.firebaseapp.com', projectId: 'treino-app-92e27',
+  storageBucket: 'treino-app-92e27.firebasestorage.app', messagingSenderId: '456944321673', appId: '1:456944321673:web:863e960b6d213cb5f03258' };
+var VER = '10.12.2';
+var $ = function (s) { return document.querySelector(s); };
+var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+var num = function (v) { var n = parseFloat(String(v == null ? '' : v).replace(',', '.')); return isNaN(n) ? null : n; };
+var fmtData = function (iso) { var p = String(iso).slice(0, 10).split('-'); return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : esc(iso); };
+var D = { logs: [], corpo: [], perfil: null };
+var tab = 'resumo', exSel = '', filtroFicha = '';
+
+function js(src) { return new Promise(function (ok, er) { var s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = function () { er(new Error('Sem conexão')); }; document.head.appendChild(s); }); }
+function boot() {
+  var b = 'https://www.gstatic.com/firebasejs/' + VER + '/firebase-';
+  js(b + 'app-compat.js').then(function () { return Promise.all([js(b + 'auth-compat.js'), js(b + 'firestore-compat.js')]); }).then(function () {
+    firebase.initializeApp(CFG);
+    firebase.auth().onAuthStateChanged(function (u) { if (u) carregar(u); else telaLogin(''); });
+  }).catch(function (e) { $('#root').innerHTML = '<div class="login card"><p class="err">' + esc(e.message) + '</p></div>'; });
+}
+function telaLogin(msg) {
+  $('#root').innerHTML = '<div class="login card"><h1>Meu Treino</h1><p class="muted">Painel para ver os dados salvos</p>' +
+    '<label>E-mail<input id="em" type="email" value="higor@treino.com"></label><label>Senha<input id="se" type="password" autocomplete="current-password"></label>' +
+    '<p class="err" id="er">' + esc(msg) + '</p><button class="btn" id="go">Entrar</button></div>';
+  function go() {
+    $('#er').textContent = '';
+    firebase.auth().signInWithEmailAndPassword($('#em').value.trim(), $('#se').value).catch(function () { $('#er').textContent = 'E-mail ou senha incorretos'; });
+  }
+  $('#go').onclick = go;
+  $('#se').onkeydown = function (e) { if (e.key === 'Enter') go(); };
+}
+async function carregar(u) {
+  $('#root').innerHTML = '<p class="muted" style="padding:40px;text-align:center">Carregando dados…</p>';
+  try {
+    var db = firebase.firestore(), base = db.collection('usuarios').doc(u.uid);
+    var r = await Promise.all([base.collection('logs').get(), base.collection('corpo').get(), base.collection('dados').doc('perfil').get()]);
+    D.logs = r[0].docs.map(function (d) { return d.data(); }).sort(function (a, b) { return String(b.data + (b.fim || '')).localeCompare(String(a.data + (a.fim || ''))); });
+    D.corpo = r[1].docs.map(function (d) { return d.data(); }).sort(function (a, b) { return String(a.data).localeCompare(String(b.data)); });
+    D.perfil = r[2].exists ? r[2].data() : null;
+    D.email = u.email;
+    desenhar();
+  } catch (e) { $('#root').innerHTML = '<div class="login card"><p class="err">Falha ao ler: ' + esc(e.code || e.message) + '</p><button class="btn" id="sa">Sair</button></div>'; $('#sa').onclick = sair; }
+}
+function sair() { firebase.auth().signOut(); }
+
+/* ---------- gráfico ---------- */
+function linha(pts, un) {
+  pts = pts.filter(function (p) { return p.y != null; });
+  if (pts.length < 2) return '<p class="muted small">Dados insuficientes para o gráfico (precisa de ao menos 2 pontos).</p>';
+  var W = 640, H = 220, L = 44, R = 12, T = 12, B = 28;
+  var xs = pts.map(function (p) { return p.x; }), ys = pts.map(function (p) { return p.y; });
+  var x0 = Math.min.apply(0, xs), x1 = Math.max.apply(0, xs), y0 = Math.min.apply(0, ys), y1 = Math.max.apply(0, ys);
+  if (y0 === y1) { y0 -= 1; y1 += 1; } var pad = (y1 - y0) * 0.1; y0 -= pad; y1 += pad; if (x0 === x1) x1 = x0 + 1;
+  var X = function (v) { return L + (v - x0) / (x1 - x0) * (W - L - R); }, Y = function (v) { return T + (1 - (v - y0) / (y1 - y0)) * (H - T - B); };
+  var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img">';
+  for (var i = 0; i <= 4; i++) { var v = y0 + (y1 - y0) * i / 4, y = Y(v); s += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y + '" y2="' + y + '" stroke="#262b36"/><text x="' + (L - 6) + '" y="' + (y + 4) + '" text-anchor="end">' + v.toFixed(1) + '</text>'; }
+  s += '<polyline fill="none" stroke="#4ade80" stroke-width="2" points="' + pts.map(function (p) { return X(p.x).toFixed(1) + ',' + Y(p.y).toFixed(1); }).join(' ') + '"/>';
+  pts.forEach(function (p) { s += '<circle cx="' + X(p.x).toFixed(1) + '" cy="' + Y(p.y).toFixed(1) + '" r="3.5" fill="#4ade80"><title>' + esc(p.t) + ': ' + p.y + ' ' + un + '</title></circle>'; });
+  s += '<text x="' + L + '" y="' + (H - 8) + '">' + esc(pts[0].t) + '</text><text x="' + (W - R) + '" y="' + (H - 8) + '" text-anchor="end">' + esc(pts[pts.length - 1].t) + '</text></svg>';
+  return s;
+}
+var dia = function (iso) { return new Date(String(iso).slice(0, 10) + 'T12:00:00').getTime() / 86400000; };
+
+/* ---------- cálculo ---------- */
+function volume(l) { var v = 0; l.exercicios.forEach(function (e) { e.series.forEach(function (s) { v += (num(s.carga) || 0) * (num(s.reps) || 0); }); }); return v; }
+function nSeries(l) { return l.exercicios.reduce(function (a, e) { return a + e.series.length; }, 0); }
+function exercicios() { var m = {}; D.logs.forEach(function (l) { l.exercicios.forEach(function (e) { m[e.nome] = 1; }); }); return Object.keys(m).sort(); }
+function serieEx(nome) {
+  var pts = [];
+  D.logs.slice().reverse().forEach(function (l) {
+    var e = l.exercicios.find(function (x) { return x.nome === nome; }); if (!e) return;
+    var mx = 0, vol = 0, best = '';
+    e.series.forEach(function (s) { var c = num(s.carga) || 0; vol += c * (num(s.reps) || 0); if (c >= mx) { mx = c; best = s.carga + 'kg×' + s.reps; } });
+    pts.push({ data: l.data, max: mx, vol: vol, melhor: best, series: e.series });
+  });
+  return pts;
+}
+
+/* ---------- telas ---------- */
+function tResumo() {
+  var ult = D.logs[0], mes = new Date().toISOString().slice(0, 7);
+  var doMes = D.logs.filter(function (l) { return String(l.data).slice(0, 7) === mes; });
+  var peso = D.corpo.filter(function (c) { return num(c.peso) != null; });
+  var h = '<div class="grid">' +
+    '<div class="stat"><span class="muted small">Treinos registrados</span><b>' + D.logs.length + '</b></div>' +
+    '<div class="stat"><span class="muted small">Treinos neste mês</span><b>' + doMes.length + '</b></div>' +
+    '<div class="stat"><span class="muted small">Último treino</span><b>' + (ult ? fmtData(ult.data) : '–') + '</b></div>' +
+    '<div class="stat"><span class="muted small">Peso mais recente</span><b>' + (peso.length ? esc(peso[peso.length - 1].peso) + ' kg' : '–') + '</b></div></div>';
+  h += '<div class="two"><div class="card"><h2>Peso</h2>' + linha(peso.map(function (c) { return { x: dia(c.data), y: num(c.peso), t: fmtData(c.data) }; }), 'kg') + '</div>' +
+    '<div class="card"><h2>Volume por treino (kg × reps)</h2>' + linha(D.logs.slice().reverse().map(function (l) { return { x: dia(l.data) + 0, y: volume(l), t: fmtData(l.data) + ' · ' + l.ficha }; }), 'kg') + '</div></div>';
+  if (ult) h += '<div class="card"><h2>Último treino · ' + esc(ult.ficha) + ' · ' + fmtData(ult.data) + '</h2>' + corpoLog(ult) + '</div>';
+  return h;
+}
+function corpoLog(l) {
+  var h = '<table><tr><th>Exercício</th><th>Séries (carga × reps)</th></tr>';
+  l.exercicios.forEach(function (e) { h += '<tr><td>' + esc(e.nome) + '</td><td><div class="chips">' + e.series.map(function (s) { return '<span class="chip">' + esc(s.carga || '–') + 'kg×' + esc(s.reps || '–') + '</span>'; }).join('') + '</div></td></tr>'; });
+  h += '</table>';
+  if (l.obs) h += '<p class="muted small">Obs.: ' + esc(l.obs) + '</p>';
+  return h;
+}
+function tTreinos() {
+  var fichas = {}; D.logs.forEach(function (l) { fichas[l.ficha] = 1; });
+  var h = '<div class="row" style="margin-bottom:12px"><select id="ff"><option value="">Todas as fichas</option>' +
+    Object.keys(fichas).map(function (f) { return '<option' + (f === filtroFicha ? ' selected' : '') + ' value="' + esc(f) + '">' + esc(f) + '</option>'; }).join('') + '</select>' +
+    '<button class="btn out" id="csv">Exportar CSV</button></div>';
+  var ls = D.logs.filter(function (l) { return !filtroFicha || l.ficha === filtroFicha; });
+  if (!ls.length) return h + '<p class="muted">Nenhum treino registrado ainda.</p>';
+  ls.forEach(function (l) {
+    h += '<details class="log"><summary><span><b>' + fmtData(l.data) + '</b> · ' + esc(l.ficha) + '</span><span class="muted small">' + l.exercicios.length + ' exercícios · ' + nSeries(l) + ' séries · ' + Math.round(volume(l)) + ' kg de volume</span></summary><div class="body">' + corpoLog(l) + '</div></details>';
+  });
+  return h;
+}
+function tEvolucao() {
+  var ex = exercicios();
+  if (!ex.length) return '<p class="muted">Sem treinos registrados ainda.</p>';
+  if (!exSel || ex.indexOf(exSel) < 0) exSel = ex[0];
+  var pts = serieEx(exSel);
+  var h = '<div class="row" style="margin-bottom:12px"><select id="fe">' + ex.map(function (n) { return '<option' + (n === exSel ? ' selected' : '') + ' value="' + esc(n) + '">' + esc(n) + '</option>'; }).join('') + '</select></div>';
+  h += '<div class="two"><div class="card"><h2>Maior carga por treino (kg)</h2>' + linha(pts.map(function (p) { return { x: dia(p.data), y: p.max || null, t: fmtData(p.data) }; }), 'kg') + '</div>' +
+    '<div class="card"><h2>Volume do exercício (kg × reps)</h2>' + linha(pts.map(function (p) { return { x: dia(p.data), y: p.vol || null, t: fmtData(p.data) }; }), 'kg') + '</div></div>';
+  h += '<div class="card"><table><tr><th>Data</th><th>Melhor série</th><th class="n">Volume</th><th>Todas as séries</th></tr>' +
+    pts.slice().reverse().map(function (p) { return '<tr><td>' + fmtData(p.data) + '</td><td>' + esc(p.melhor) + '</td><td class="n">' + Math.round(p.vol) + '</td><td><div class="chips">' + p.series.map(function (s) { return '<span class="chip">' + esc(s.carga || '–') + '×' + esc(s.reps || '–') + '</span>'; }).join('') + '</div></td></tr>'; }).join('') + '</table></div>';
+  return h;
+}
+function tCorpo() {
+  if (!D.corpo.length) return '<p class="muted">Nenhuma medida registrada ainda.</p>';
+  var c = function (k, un) { return D.corpo.map(function (m) { return { x: dia(m.data), y: num(m[k]), t: fmtData(m.data) }; }); };
+  var h = '<div class="two"><div class="card"><h2>Peso (kg)</h2>' + linha(c('peso'), 'kg') + '</div><div class="card"><h2>Cintura (cm)</h2>' + linha(c('cintura'), 'cm') + '</div>' +
+    '<div class="card"><h2>Braço (cm)</h2>' + linha(c('braco'), 'cm') + '</div><div class="card"><h2>Coxa (cm)</h2>' + linha(c('coxa'), 'cm') + '</div></div>';
+  h += '<div class="card"><table><tr><th>Data</th><th class="n">Peso</th><th class="n">Cintura</th><th class="n">Braço</th><th class="n">Coxa</th></tr>' +
+    D.corpo.slice().reverse().map(function (m) { return '<tr><td>' + fmtData(m.data) + '</td><td class="n">' + esc(m.peso || '–') + '</td><td class="n">' + esc(m.cintura || '–') + '</td><td class="n">' + esc(m.braco || '–') + '</td><td class="n">' + esc(m.coxa || '–') + '</td></tr>'; }).join('') + '</table></div>';
+  return h;
+}
+function tFichas() {
+  var p = D.perfil;
+  if (!p) return '<p class="muted">Ainda não há fichas na nuvem. Entre no app do celular para sincronizar.</p>';
+  var h = '<h2>Fichas de treino</h2><div class="two">';
+  (p.treinos || []).forEach(function (t) {
+    h += '<div class="card"><h3 style="margin-top:0">' + esc(t.nome) + '</h3><table>' + (t.exercicios || []).map(function (e) { return '<tr><td>' + esc(e.nome) + '</td><td class="n">' + esc(e.series) + ' × ' + esc(e.reps) + '</td></tr>'; }).join('') + '</table></div>';
+  });
+  h += '</div><h2>Dietas</h2><div class="two">';
+  (p.dietas || []).forEach(function (d) {
+    h += '<div class="card"><h3 style="margin-top:0">' + esc(d.nome) + '</h3>' + (d.refeicoes || []).map(function (r) { return '<p><b>' + esc(r.nome) + '</b><br><span class="muted">' + (r.itens || []).map(esc).join(' · ') + '</span></p>'; }).join('') + '</div>';
+  });
+  h += '</div>';
+  if (p.tecnicas) h += '<div class="card"><h2>Técnicas</h2><p class="muted" style="white-space:pre-wrap">' + esc(p.tecnicas) + '</p></div>';
+  return h;
+}
+function csv() {
+  var q = function (v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; };
+  var rows = [['Data', 'Ficha', 'Exercício', 'Série', 'Carga (kg)', 'Reps']];
+  D.logs.forEach(function (l) { l.exercicios.forEach(function (e) { e.series.forEach(function (s, i) { rows.push([l.data, l.ficha, e.nome, i + 1, s.carga, s.reps]); }); }); });
+  var blob = new Blob(['﻿' + rows.map(function (r) { return r.map(q).join(';'); }).join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'treinos.csv'; a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+}
+function desenhar() {
+  var tabs = [['resumo', 'Resumo'], ['treinos', 'Treinos'], ['evolucao', 'Evolução'], ['corpo', 'Corpo'], ['fichas', 'Fichas e dieta']];
+  var body = { resumo: tResumo, treinos: tTreinos, evolucao: tEvolucao, corpo: tCorpo, fichas: tFichas }[tab]();
+  $('#root').innerHTML = '<header class="top"><h1>Meu Treino · Painel</h1><div class="row"><span class="muted small">' + esc(D.email) + '</span>' +
+    '<button class="btn out" id="rf">Atualizar</button><button class="btn out" id="sa">Sair</button></div></header>' +
+    '<nav class="tabs">' + tabs.map(function (t) { return '<button data-t="' + t[0] + '" class="' + (t[0] === tab ? 'on' : '') + '">' + t[1] + '</button>'; }).join('') + '</nav><main>' + body + '</main>';
+  document.querySelectorAll('nav.tabs button').forEach(function (b) { b.onclick = function () { tab = b.dataset.t; desenhar(); }; });
+  $('#sa').onclick = sair;
+  $('#rf').onclick = function () { carregar(firebase.auth().currentUser); };
+  if ($('#ff')) $('#ff').onchange = function () { filtroFicha = this.value; desenhar(); };
+  if ($('#fe')) $('#fe').onchange = function () { exSel = this.value; desenhar(); };
+  if ($('#csv')) $('#csv').onclick = csv;
+}
+boot();
+})();
+</script>
+</body>
+</html>
