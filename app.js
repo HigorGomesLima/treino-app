@@ -225,14 +225,21 @@ function ultimoDoExercicio(nome) {
   }
   return null;
 }
-/* série "-40%": 60% da maior carga do último treino do exercício, arredondada a 0,5 kg */
-function sugestao40(e, prev) {
-  if (!prev || String(e.reps).indexOf('-40%') < 0) return null;
-  var mx = 0;
-  prev.sets.forEach(function (s) { mx = Math.max(mx, num(s.carga)); });
-  if (!mx) return null;
-  var v = Math.round(mx * 0.6 * 2) / 2;
-  return { max: mx, valor: v, txt: String(v).replace('.', ',') };
+/* série "-40%" (a última do exercício): 60% da carga da série anterior preenchida neste treino, arredondada a 0,5 kg */
+function sugestao40(e) {
+  if (String(e.reps).indexOf('-40%') < 0) return null;
+  var base = 0;
+  for (var j = e.sets.length - 2; j >= 0 && !base; j--) base = num(e.sets[j].carga);
+  if (!base) return { txt: '', html: 'Série final (-40%): preencha a carga da série anterior para ver a sugestão' };
+  var v = Math.round(base * 0.6 * 2) / 2, t = String(v).replace('.', ',');
+  return { txt: t, html: 'Série final (-40%): <b>' + t + ' kg</b> <span class="muted">(60% de ' + String(base).replace('.', ',') + ' kg, a série anterior)</span>' };
+}
+function atualizarSug(i) {
+  var e = S.rascunho.exercicios[i], sug = sugestao40(e);
+  if (!sug) return;
+  var p = $('#sug-' + i); if (p) p.innerHTML = sug.html;
+  var inp = $('input[data-f="carga"][data-i="' + i + '"][data-j="' + (e.sets.length - 1) + '"]');
+  if (inp) inp.placeholder = sug.txt || 'kg';
 }
 function ultimaDataTreino(id) {
   var l = S.logs.find(function (x) { return x.treinoId === id; });
@@ -294,13 +301,13 @@ function vSessao() {
     var prev = ultimoDoExercicio(e.nome);
     h += '<div class="card"><div class="row"><h2>' + esc(e.nome) + '</h2><span class="pill">' + e.series + '×' + esc(e.reps) + '</span></div>';
     if (prev) h += '<p class="muted small">Último (' + fmtData(prev.data) + '): ' + prev.sets.map(fmtSet).join(' · ') + '</p>';
-    var sug = sugestao40(e, prev);
-    if (sug) h += '<p class="small" style="color:var(--acc)">Série final (-40%): <b>' + sug.txt + ' kg</b> <span class="muted">(60% de ' + String(sug.max).replace('.', ',') + ' kg, a maior carga do último treino)</span></p>';
+    var sug = sugestao40(e);
+    if (sug) h += '<p class="small" id="sug-' + i + '" style="color:var(--acc)">' + sug.html + '</p>';
     h += '<div class="sets"><div class="sethead"><span>#</span><span>Carga (kg)</span><span>Reps</span><span></span></div>';
     e.sets.forEach(function (s, j) {
       var ps = prev && prev.sets[j];
       h += '<div class="setrow' + (s.ok ? ' ok' : '') + '"><span class="n">' + (j + 1) + '</span>' +
-        '<input inputmode="decimal" data-f="carga" data-i="' + i + '" data-j="' + j + '" value="' + esc(s.carga) + '" placeholder="' + esc(sug && j === e.series - 1 ? sug.txt : ps ? ps.carga : 'kg') + '">' +
+        '<input inputmode="decimal" data-f="carga" data-i="' + i + '" data-j="' + j + '" value="' + esc(s.carga) + '" placeholder="' + esc(sug && j === e.sets.length - 1 ? (sug.txt || 'kg') : ps ? ps.carga : 'kg') + '">' +
         '<input inputmode="numeric" data-f="reps" data-i="' + i + '" data-j="' + j + '" value="' + esc(s.reps) + '" placeholder="' + esc(ps ? ps.reps : 'reps') + '">' +
         '<button class="chk" data-act="ok" data-i="' + i + '" data-j="' + j + '">' + (s.ok ? '✓' : '') + '</button></div>';
     });
@@ -827,6 +834,7 @@ document.addEventListener('input', function (ev) {
   if (t.dataset.f === 'obs') { S.rascunho.obs = t.value; save(); return; }
   if (t.dataset.i !== undefined) {
     S.rascunho.exercicios[+t.dataset.i].sets[+t.dataset.j][t.dataset.f] = t.value;
+    if (t.dataset.f === 'carga') atualizarSug(+t.dataset.i);
     save();
   }
 });
