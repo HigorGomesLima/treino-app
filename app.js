@@ -225,6 +225,15 @@ function ultimoDoExercicio(nome) {
   }
   return null;
 }
+/* série "-40%": 60% da maior carga do último treino do exercício, arredondada a 0,5 kg */
+function sugestao40(e, prev) {
+  if (!prev || String(e.reps).indexOf('-40%') < 0) return null;
+  var mx = 0;
+  prev.sets.forEach(function (s) { mx = Math.max(mx, num(s.carga)); });
+  if (!mx) return null;
+  var v = Math.round(mx * 0.6 * 2) / 2;
+  return { max: mx, valor: v, txt: String(v).replace('.', ',') };
+}
 function ultimaDataTreino(id) {
   var l = S.logs.find(function (x) { return x.treinoId === id; });
   return l ? fmtData(l.data) : null;
@@ -285,11 +294,13 @@ function vSessao() {
     var prev = ultimoDoExercicio(e.nome);
     h += '<div class="card"><div class="row"><h2>' + esc(e.nome) + '</h2><span class="pill">' + e.series + '×' + esc(e.reps) + '</span></div>';
     if (prev) h += '<p class="muted small">Último (' + fmtData(prev.data) + '): ' + prev.sets.map(fmtSet).join(' · ') + '</p>';
+    var sug = sugestao40(e, prev);
+    if (sug) h += '<p class="small" style="color:var(--acc)">Série final (-40%): <b>' + sug.txt + ' kg</b> <span class="muted">(60% de ' + String(sug.max).replace('.', ',') + ' kg, a maior carga do último treino)</span></p>';
     h += '<div class="sets"><div class="sethead"><span>#</span><span>Carga (kg)</span><span>Reps</span><span></span></div>';
     e.sets.forEach(function (s, j) {
       var ps = prev && prev.sets[j];
       h += '<div class="setrow' + (s.ok ? ' ok' : '') + '"><span class="n">' + (j + 1) + '</span>' +
-        '<input inputmode="decimal" data-f="carga" data-i="' + i + '" data-j="' + j + '" value="' + esc(s.carga) + '" placeholder="' + esc(ps ? ps.carga : 'kg') + '">' +
+        '<input inputmode="decimal" data-f="carga" data-i="' + i + '" data-j="' + j + '" value="' + esc(s.carga) + '" placeholder="' + esc(sug && j === e.series - 1 ? sug.txt : ps ? ps.carga : 'kg') + '">' +
         '<input inputmode="numeric" data-f="reps" data-i="' + i + '" data-j="' + j + '" value="' + esc(s.reps) + '" placeholder="' + esc(ps ? ps.reps : 'reps') + '">' +
         '<button class="chk" data-act="ok" data-i="' + i + '" data-j="' + j + '">' + (s.ok ? '✓' : '') + '</button></div>';
     });
