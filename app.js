@@ -102,13 +102,13 @@ function normalizar(o) {
     o.config.dietaId = nd2.id;
   }
   o.migDieta2 = true;
-  if (!o.migTreino2) {
-    var antigos = ['Treino 1 · Costas e bíceps', 'Treino 2 · Peito, ombro e tríceps', 'Treino 3 · Pernas'];
-    o.treinos = o.treinos.filter(function (t) { return antigos.indexOf(t.nome) < 0; });
-    o.treinos = novosTreinos().concat(o.treinos);
+  /* troca as fichas antigas pelas novas; por nome, para valer também quando a nuvem devolve as antigas */
+  var antigos = ['Treino 1 · Costas e bíceps', 'Treino 2 · Peito, ombro e tríceps', 'Treino 3 · Pernas'];
+  if (o.treinos.some(function (t) { return antigos.indexOf(t.nome) >= 0; })) {
+    o.treinos = novosTreinos().concat(o.treinos.filter(function (t) { return antigos.indexOf(t.nome) < 0; }));
     if (o.rascunho && !o.treinos.find(function (t) { return t.id === o.rascunho.treinoId; })) o.rascunho = null;
-    o.migTreino2 = true;
   }
+  o.migTreino2 = true;
   o.rascunho = o.rascunho || null;
   o.v = 1;
   return o;
