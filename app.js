@@ -28,30 +28,42 @@ function fmtSet(s) { return (s.carga || '–') + 'kg×' + (s.reps || '–'); }
 function ex(nome, series, reps) { return { id: uid(), nome: nome, series: series, reps: reps }; }
 function ref(nome, itens) { return { id: uid(), nome: nome, itens: itens }; }
 
+function novosTreinos() {
+  var P = '1×12 / 1×5 / 2×6 a 8', F = P + ' / 1×falha (-40%)';
+  return [
+    { id: uid(), nome: 'Treino 1 · Perna', exercicios: [
+      ex('Agachamento búlgaro', 4, '1×8 / 1×5 / 2×6 a 8'), ex('Leg press unilateral', 4, '1×8 / 1×5 / 2×6 a 8'),
+      ex('Extensora', 3, '1×12 / 1×5 / 1 Custler set 16 reps (4×4, 10 s)'), ex('Mesa flexora', 2, '1×12 / 1 Custler set 16 reps (4×4, 10 s)'),
+      ex('Panturrilha em pé', 4, P + ' (pico de contração)')] },
+    { id: uid(), nome: 'Treino 2 · Peito e ombro', exercicios: [
+      ex('Supino inclinado Smith', 4, P), ex('Crucifixo inclinado', 5, F), ex('Supino reto', 4, P),
+      ex('Crossover', 4, P), ex('Desenvolvimento máquina', 5, F), ex('Elevação lateral', 4, P)] },
+    { id: uid(), nome: 'Treino 3 · Costas', exercicios: [
+      ex('Pulldown corda', 5, F), ex('Puxada alta supinada (barra anatômica)', 4, '1×12 / 1×5 / 2×6 a 10'),
+      ex('Remada baixa unilateral', 4, P), ex('Remada cavalinho', 5, F), ex('Pullface corda', 4, P),
+      ex('Meio terra', 4, '2×15 / 2×6 a 8')] },
+    { id: uid(), nome: 'Treino 4 · Bíceps e tríceps', exercicios: [
+      ex('Tríceps corda', 4, P + ' (pico de contração)'), ex('Tríceps coice unilateral polia', 4, P),
+      ex('Tríceps francês unilateral polia', 5, F), ex('Rosca Scott', 4, P), ex('Rosca martelo', 4, P),
+      ex('Rosca direta barra W na polia (de costas para a polia)', 4, '1×12 / 1×5 / 2×6 a 10')] },
+    { id: uid(), nome: 'Treino 5 · Perna', exercicios: [
+      ex('Hack machine', 5, F), ex('Extensora', 4, P), ex('Elevação pélvica', 4, P),
+      ex('Adutora', 5, F), ex('Flexora sentado', 4, P), ex('Panturrilha em pé', 4, P)] }
+  ];
+}
+
 function seed() {
-  var t1 = { id: uid(), nome: 'Treino 1 · Costas e bíceps', exercicios: [
-    ex('Puxada alta aberta', 4, '8 a 12'), ex('Puxada supinada', 4, '8 a 12'),
-    ex('Remada baixa triângulo', 4, '8'), ex('Remada cavalinho com apoio', 5, '6 a 8'),
-    ex('Rosca direta', 4, '8 a 12'), ex('Rosca martelo', 4, '6 a 8'),
-    ex('Rosca concentrado sentado', 4, '8 a 12')] };
-  var t2 = { id: uid(), nome: 'Treino 2 · Peito, ombro e tríceps', exercicios: [
-    ex('Supino reto', 4, '8 a 12'), ex('Supino inclinado', 4, '6 a 10'),
-    ex('Voador aberto', 4, '10 a 12'), ex('Elevação frontal', 4, '10 a 12'),
-    ex('Desenvolvimento máquina', 4, '10 a 12'), ex('Tríceps barra polia', 4, '8'),
-    ex('Tríceps francês halter', 4, '6 a 8')] };
-  var t3 = { id: uid(), nome: 'Treino 3 · Pernas', exercicios: [
-    ex('Extensora', 4, '2×15 / 2×6 a 8'), ex('Agachamento hack', 4, '8 a 12'),
-    ex('Leg press 45', 4, '12 a 15'), ex('Adutora', 4, '8 a 12'),
-    ex('Mesa flexora', 4, '8 a 12'), ex('Panturrilha em pé', 4, '8 a 12')] };
   var d1 = { id: uid(), nome: 'Dieta 1', refeicoes: [
     ref('Ref 1', ['2 pães de forma ou 1 de sal', '2 ovos', '120g banana prata', '20g aveia', '10g chia', '40g whey']),
     ref('Ref 2', ['130g arroz', '120g peito de frango', '100g vagem/brócolis/cenoura', 'Salada de folhas', '5g de azeite']),
     ref('Ref 3', ['2 pães de forma', '20g doce de leite', '100g peito de frango']),
     ref('Ref 4', ['200g batata inglesa', '130g peito de frango', '100g abóbora', 'Salada de folhas', '5g azeite'])] };
+  var d2 = dieta2();
   return {
     v: 1,
-    treinos: [t1, t2, t3],
-    dietas: [d1],
+    migTreino2: true,
+    treinos: novosTreinos(),
+    dietas: [d1, d2],
     logs: [],
     corpo: [],
     dietaChecks: {},
@@ -60,8 +72,15 @@ function seed() {
       'Rest pause: 10 repetições, descansar 15 s e fazer até a falha, com carga máxima.\n' +
       'Top set: última série válida, até a falha com carga máxima (mínimo 6 reps).\n' +
       'Backoff: descansar só 30 s após a última série, reduzir 30% da carga máxima e fazer até a falha.',
-    config: { webhook: '', headers: '', dietaId: d1.id }
+    config: { webhook: '', headers: '', dietaId: d2.id }
   };
+}
+function dieta2() {
+  return { id: uid(), nome: 'Dieta 2', refeicoes: [
+    ref('Ref 1', ['2 pães de forma ou 1 de sal', '3 claras', '1 gema', '120g banana prata', '10g aveia', '10g chia', '40g whey']),
+    ref('Ref 2', ['100g arroz', '130g peito de frango', '100g vagem/brócolis/cenoura', 'Salada de folhas', '5g de azeite']),
+    ref('Ref 3', ['80g banana da terra', '10g doce de leite', '100g peito de frango']),
+    ref('Ref 4', ['130g batata inglesa', '140g peito de frango', '100g abóbora', 'Salada de folhas', '5g azeite'])] };
 }
 
 /* ================= estado e armazenamento ================= */
@@ -77,6 +96,19 @@ function normalizar(o) {
   o.config.headers = o.config.headers || '';
   if (!o.config.user || typeof o.config.user !== 'object') o.config.user = null;
   if (!o.dietas.find(function (d) { return d.id === o.config.dietaId; })) o.config.dietaId = o.dietas[0] ? o.dietas[0].id : null;
+  if (!o.migDieta2 && !o.dietas.find(function (d) { return d.nome === 'Dieta 2'; })) {
+    var nd2 = dieta2();
+    o.dietas.push(nd2);
+    o.config.dietaId = nd2.id;
+  }
+  o.migDieta2 = true;
+  if (!o.migTreino2) {
+    var antigos = ['Treino 1 · Costas e bíceps', 'Treino 2 · Peito, ombro e tríceps', 'Treino 3 · Pernas'];
+    o.treinos = o.treinos.filter(function (t) { return antigos.indexOf(t.nome) < 0; });
+    o.treinos = novosTreinos().concat(o.treinos);
+    if (o.rascunho && !o.treinos.find(function (t) { return t.id === o.rascunho.treinoId; })) o.rascunho = null;
+    o.migTreino2 = true;
+  }
   o.rascunho = o.rascunho || null;
   o.v = 1;
   return o;
