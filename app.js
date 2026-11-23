@@ -49,7 +49,12 @@ function novosTreinos() {
     { id: uid(), nome: 'Treino 5 · Perna', exercicios: [
       ex('Hack machine', 5, F), ex('Extensora', 4, P), ex('Elevação pélvica', 4, P),
       ex('Adutora', 5, F), ex('Flexora sentado', 4, P), ex('Panturrilha em pé', 4, P)] }
-  ];
+  ].map(function (t, n) {
+    /* ids fixos: todo aparelho gera as mesmas fichas e os botões nunca ficam com id velho */
+    t.id = 'ficha' + (n + 1);
+    t.exercicios.forEach(function (e, k) { e.id = t.id + '-' + (k + 1); });
+    return t;
+  });
 }
 
 function seed() {
@@ -508,6 +513,7 @@ async function puxar(substituir) {
     rl.forEach(function (x) { nuvem.hashes['logs/' + x.id]= JSON.stringify(x); });
     rc.forEach(function (x) { nuvem.hashes['corpo/' + x.id] = JSON.stringify(x); });
     nuvem.hashes['dados/perfil'] = pf.exists ? '?' : '';
+    if (!ui.sessao && !$('#sheet').classList.contains('on')) render();
     await empurrar();
   } catch (e) { nuvem.status = 'falhou: ' + (e.code || e.message); }
 }
